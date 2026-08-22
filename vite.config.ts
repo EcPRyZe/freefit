@@ -142,6 +142,31 @@ function authPopupPlugin(): Plugin {
   };
 }
 
+function skipNitroEnvOnPages(pages: boolean): Plugin {
+  return {
+    name: "freefit:skip-nitro-env",
+    apply: "build",
+    sharedDuringBuild: true,
+    buildApp: {
+      order: "pre",
+      handler(builder: {
+        environments: { nitro?: unknown };
+        build: (env: unknown) => Promise<unknown>;
+      }) {
+        if (!pages) return;
+        const orig = builder.build.bind(builder);
+        builder.build = async (env: unknown) => {
+          if (env && env === builder.environments.nitro) {
+            console.log("[freefit] skip Nitro SSR env (GitHub Pages is static)");
+            return { output: [] };
+          }
+          return orig(env);
+        };
+      },
+    },
+  } as Plugin;
+}
+
 // `0.0.0.0:8080` is the live-preview contract — don't change host/port.
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
@@ -171,6 +196,7 @@ export default defineConfig(({ command, isPreview }) => {
     grokPwaPlugin(),
     tailwindcss(),
     tanstackStart(),
+    skipNitroEnvOnPages(pages),
     ...(command === "build" || isPreview
       ? [
           nitro({
