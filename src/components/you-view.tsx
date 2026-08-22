@@ -52,6 +52,16 @@ export function YouView() {
         </div>
       </div>
 
+      {profile.isDemo && (
+        <div className="mt-5 rounded-2xl bg-raised px-4 py-3 shadow-border">
+          <p className="text-sm font-medium">Demo profile</p>
+          <p className="mt-1 text-xs text-muted">
+            Alex's sample lifts. Start fresh anytime to create your own — this won't keep demo
+            history.
+          </p>
+        </div>
+      )}
+
       <Link
         to="/stats"
         className="mt-6 flex items-center justify-between rounded-2xl bg-surface px-4 py-3 shadow-border"

@@ -26,6 +26,8 @@ const STEPS = ["Welcome", "Goal", "Level", "Time", "Gym", "Days"] as const;
 
 export function Onboarding() {
   const complete = useGym((s) => s.completeOnboarding);
+  const loadDemo = useGym((s) => s.loadDemo);
+  const [mode, setMode] = useState<"gate" | "create">("gate");
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Profile>({ ...DEFAULT_PROFILE, name: "" });
 
@@ -40,6 +42,52 @@ export function Onboarding() {
 
   function back() {
     if (step > 0) setStep((s) => s - 1);
+    else setMode("gate");
+  }
+
+  if (mode === "gate") {
+    return (
+      <div className="mx-auto flex min-h-dvh max-w-lg flex-col bg-bg px-5 pb-10 pt-[max(2.5rem,env(safe-area-inset-top))]">
+        <div className="flex flex-1 flex-col justify-center">
+          <p className="font-display text-5xl font-semibold tracking-wide">FREEFIT</p>
+          <h1 className="mt-6 text-3xl font-semibold leading-tight tracking-tight">
+            How do you want
+            <br />
+            to start?
+          </h1>
+          <p className="mt-3 max-w-sm text-muted">
+            Build a plan around you, or poke around a fully logged demo first.
+          </p>
+
+          <div className="mt-8 grid gap-3">
+            <button
+              type="button"
+              onClick={() => setMode("create")}
+              className="rounded-2xl bg-primary px-5 py-5 text-left text-primary-fg transition-transform duration-150 active:scale-[0.98]"
+            >
+              <div className="text-lg font-semibold">Create a new profile</div>
+              <p className="mt-1 text-sm text-primary-fg/80">
+                Name, goal, gym, and empty history. Workouts start from your numbers.
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => loadDemo()}
+              className="rounded-2xl bg-raised px-5 py-5 text-left shadow-border transition-transform duration-150 active:scale-[0.98]"
+            >
+              <div className="text-lg font-semibold">View the demo</div>
+              <p className="mt-1 text-sm text-muted">
+                Alex — intermediate, full gym, eight logged workouts so ratings and charts already
+                have something to show.
+              </p>
+            </button>
+          </div>
+        </div>
+        <p className="text-center text-xs text-faint">
+          Demo data stays on this device. You can start fresh anytime from You.
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -207,11 +255,9 @@ export function Onboarding() {
       </div>
 
       <div className="flex gap-3">
-        {step > 0 && (
-          <Button variant="secondary" size="xl" className="flex-1" onClick={back}>
-            Back
-          </Button>
-        )}
+        <Button variant="secondary" size="xl" className="flex-1" onClick={back}>
+          Back
+        </Button>
         <Button size="xl" className="flex-[2]" onClick={next}>
           {step === STEPS.length - 1 ? "Build my plan" : "Continue"}
         </Button>

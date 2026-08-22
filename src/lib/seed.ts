@@ -18,6 +18,7 @@ export const DEFAULT_PROFILE: Profile = {
   bodyweightLb: 185,
   heightIn: 71,
   exerciseBias: {},
+  isDemo: false,
 };
 
 export function normalizeProfile(raw: Partial<Profile> | undefined): Profile {
@@ -28,6 +29,7 @@ export function normalizeProfile(raw: Partial<Profile> | undefined): Profile {
     equipment: p.equipment?.length ? p.equipment : [...FULL_GYM],
     excludedExerciseIds: p.excludedExerciseIds ?? [],
     exerciseBias: p.exerciseBias ?? {},
+    isDemo: Boolean(p.isDemo),
     sex: p.sex === "female" ? "female" : "male",
     age: clampNum(p.age, 14, 80, DEFAULT_PROFILE.age),
     bodyweightLb: clampNum(p.bodyweightLb, 70, 450, DEFAULT_PROFILE.bodyweightLb),

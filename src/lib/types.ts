@@ -247,6 +247,7 @@ export interface Profile {
   bodyweightLb: number;
   heightIn: number;
   exerciseBias: Record<string, number>;
+  isDemo?: boolean;
 }
 
 export interface StravaAccount {

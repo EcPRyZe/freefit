@@ -52,6 +52,7 @@ interface GymState {
 
   setHydrated: () => void;
   completeOnboarding: (profile: Profile) => void;
+  loadDemo: () => void;
   updateProfile: (patch: Partial<Profile>) => void;
   regenerate: (focus?: Focus) => void;
   startWorkout: () => void;
@@ -90,10 +91,6 @@ interface GymState {
   exportBackup: () => GymBackup;
   importBackup: (raw: unknown) => { sessions: number; exercises: number };
 }
-
-const seedHistory = createSeedHistory();
-const seedProfile = DEFAULT_PROFILE;
-const seedPlanned = generateWorkout(seedProfile, seedHistory);
 
 function applySet(
   session: WorkoutSession,
@@ -134,10 +131,10 @@ export const useGym = create<GymState>()(
   persist(
     (set, get) => ({
       hydrated: false,
-      onboardingComplete: true,
-      profile: seedProfile,
-      history: seedHistory,
-      planned: seedPlanned,
+      onboardingComplete: false,
+      profile: normalizeProfile({ ...DEFAULT_PROFILE, name: "" }),
+      history: [],
+      planned: null,
       active: null,
       rest: null,
       nonce: 1,
@@ -153,7 +150,7 @@ export const useGym = create<GymState>()(
       },
 
       completeOnboarding: (profile) => {
-        const next = normalizeProfile(profile);
+        const next = normalizeProfile({ ...profile, isDemo: false });
         set({
           onboardingComplete: true,
           profile: next,
@@ -164,6 +161,25 @@ export const useGym = create<GymState>()(
           nonce: 1,
           planMode: "auto",
         });
+      },
+
+      loadDemo: () => {
+        const history = createSeedHistory();
+        const profile = { ...DEFAULT_PROFILE, isDemo: true };
+        set({
+          onboardingComplete: true,
+          profile,
+          history,
+          planned: generateWorkout(profile, history),
+          active: null,
+          rest: null,
+          nonce: 1,
+          lastPR: null,
+          planMode: "auto",
+          customExercises: [],
+          shareSession: null,
+        });
+        bindCustomExercises([]);
       },
 
       updateProfile: (patch) => {
