@@ -33,7 +33,14 @@ function listHtml(dir, acc = []) {
 const htmlFiles = listHtml(join(root, ".output"));
 console.log("HTML files:", htmlFiles.join("\n") || "(none)");
 
+const public404 = join(publicDir, "404.html");
+if (!existsSync(join(publicDir, "index.html")) && existsSync(public404)) {
+  cpSync(public404, join(publicDir, "index.html"));
+  console.log("Copied 404.html -> index.html (GitHub Pages SPA shell)");
+}
+
 let index = htmlFiles.find((p) => p.endsWith(`${join("public", "index.html")}`))
+  || (existsSync(join(publicDir, "index.html")) ? join(publicDir, "index.html") : null)
   || htmlFiles.find((p) => p.endsWith("index.html"));
 
 if (!index) {
