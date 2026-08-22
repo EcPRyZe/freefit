@@ -36,3 +36,4 @@ if (result.status !== 0) {
   );
 }
 console.log("Pages site ready in .output/public");
+process.exit(0);
