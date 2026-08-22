@@ -19,45 +19,48 @@ const result = spawnSync(
   { stdio: "inherit", env: process.env },
 );
 
-function listHtml(dir, acc = []) {
+function walk(dir, acc = []) {
   if (!existsSync(dir)) return acc;
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
-    const st = statSync(p);
-    if (st.isDirectory()) listHtml(p, acc);
-    else if (name.endsWith(".html")) acc.push(p);
+    if (statSync(p).isDirectory()) walk(p, acc);
+    else acc.push(p);
   }
   return acc;
 }
 
-const htmlFiles = listHtml(join(root, ".output"));
-console.log("HTML files:", htmlFiles.join("\n") || "(none)");
+const htmlFiles = walk(join(root, ".output")).filter((p) => p.endsWith(".html"));
+console.log(
+  "HTML files:\n",
+  htmlFiles.map((p) => `${p} (${statSync(p).size}b)`).join("\n") || "(none)",
+);
 
-const public404 = join(publicDir, "404.html");
-if (!existsSync(join(publicDir, "index.html")) && existsSync(public404)) {
-  cpSync(public404, join(publicDir, "index.html"));
-  console.log("Copied 404.html -> index.html (GitHub Pages SPA shell)");
-}
-
-let index = htmlFiles.find((p) => p.endsWith(`${join("public", "index.html")}`))
-  || (existsSync(join(publicDir, "index.html")) ? join(publicDir, "index.html") : null)
-  || htmlFiles.find((p) => p.endsWith("index.html"));
-
-if (!index) {
-  console.error("Pages build: no index.html after prerender");
-  process.exit(result.status || 1);
-}
-
-const indexDir = index.slice(0, -"index.html".length);
-if (indexDir !== publicDir + "/" && indexDir !== publicDir) {
-  console.log("Flattening", indexDir, "->", publicDir);
+const nonempty = htmlFiles.filter((p) => statSync(p).size > 0);
+const nestedIndex = nonempty.find((p) => p.endsWith("index.html") && !p.endsWith(join("public", "index.html")));
+if (nestedIndex) {
+  const nestedDir = nestedIndex.slice(0, -"index.html".length);
+  console.log("Flattening", nestedDir, "->", publicDir);
   mkdirSync(publicDir, { recursive: true });
-  cpSync(indexDir, publicDir, { recursive: true });
+  cpSync(nestedDir, publicDir, { recursive: true });
 }
 
-if (!existsSync(join(publicDir, "404.html"))) {
-  cpSync(join(publicDir, "index.html"), join(publicDir, "404.html"));
+const publicIndex = join(publicDir, "index.html");
+const public404 = join(publicDir, "404.html");
+const best = nonempty.sort((a, b) => statSync(b).size - statSync(a).size)[0];
+if ((!existsSync(publicIndex) || statSync(publicIndex).size === 0) && best) {
+  cpSync(best, publicIndex);
+  console.log("Copied", best, "-> index.html");
+}
+if (!existsSync(public404) || statSync(public404).size === 0) {
+  if (existsSync(publicIndex) && statSync(publicIndex).size > 0) {
+    cpSync(publicIndex, public404);
+  }
 }
 writeFileSync(join(publicDir, ".nojekyll"), "");
-console.log("Pages site ready in .output/public");
+
+if (!existsSync(publicIndex) || statSync(publicIndex).size === 0) {
+  console.error("Pages build: index.html is still empty");
+  process.exit(1);
+}
+console.log("Pages site ready:", statSync(publicIndex).size, "byte index.html");
 process.exit(0);

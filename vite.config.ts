@@ -204,6 +204,15 @@ export default defineConfig(({ command, isPreview }) => {
             // Grok PWA middleware is for the sandbox preview. GitHub Pages is
             // static and can't load the ?raw HTML import during prerender.
             serverDir: pages ? false : "./server",
+            ...(pages
+              ? {
+                  prerender: {
+                    crawlLinks: true,
+                    // BASE_URL is /freefit/ on project Pages; `/` SSR is empty.
+                    routes: [base.endsWith("/") ? base : `${base}/`, "/404.html"],
+                  },
+                }
+              : {}),
           }),
         ]
       : []),
