@@ -1,6 +1,14 @@
 import { catalog, getExercise } from "./exercises";
 import { epley1RM, roundTo, todayISO, uid } from "./format";
 import {
+  isCorePattern,
+  isSpinalLoad,
+  patternOf,
+  pressAngle,
+  qualityScore,
+  type Pattern,
+} from "./patterns";
+import {
   averageRecovery,
   computeRecovery,
   daysSinceFocus,
@@ -9,29 +17,11 @@ import type {
   Exercise,
   Focus,
   LoggedSet,
-  Muscle,
   Profile,
   SessionExercise,
   WorkoutSession,
 } from "./types";
 import { FOCUS_LABEL, FOCUS_MUSCLES } from "./types";
-
-const CORE_MUSCLES: Muscle[] = ["abs", "obliques"];
-const ISO_SLOTS = new Set<string>([
-  "core",
-  "sideDelts",
-  "triceps",
-  "biceps",
-  "rearDelts",
-  "calves",
-  "adductors",
-]);
-
-type Slot = Muscle | "core";
-
-function isCore(ex: Exercise): boolean {
-  return CORE_MUSCLES.includes(ex.primary);
-}
 
 function available(profile: Profile): Exercise[] {
   const kit = new Set(profile.equipment);
@@ -78,8 +68,8 @@ function scheme(profile: Profile, ex: Exercise): { sets: number; reps: number; r
   }
   if (profile.goal === "muscle") {
     return compound
-      ? { sets: 4, reps: 8, rest: 90 }
-      : { sets: 3 + expBonus, reps: 12, rest: 60 };
+      ? { sets: 4, reps: 8, rest: 120 }
+      : { sets: 3 + expBonus, reps: 12, rest: 75 };
   }
   if (profile.goal === "power") {
     return compound
@@ -87,8 +77,8 @@ function scheme(profile: Profile, ex: Exercise): { sets: number; reps: number; r
       : { sets: 3, reps: 6, rest: 90 };
   }
   return compound
-    ? { sets: 3 + expBonus, reps: 8, rest: 90 }
-    : { sets: 3, reps: 10, rest: 60 };
+    ? { sets: 3 + expBonus, reps: 8, rest: 120 }
+    : { sets: 3, reps: 10, rest: 75 };
 }
 
 export function lastWorkingSets(
@@ -158,43 +148,49 @@ function exerciseCount(durationMin: number): number {
   return 8;
 }
 
-/** 4–8 slot templates. Push = chest/shoulders/tris + abs. Pull = back/bis + abs. */
+/**
+ * Pattern templates. Compounds first. Push = horizontal + vertical press
+ * (Helms / Israetel PPL). Pull = vertical + horizontal pull + face-pulls.
+ * Legs = squat, then hinge, then unilateral — one axial-load pattern, not two.
+ */
+type Slot = Pattern | "core";
+
 function slotsFor(focus: Focus, want: number): Slot[] {
   const table: Record<Focus, Slot[][]> = {
     push: [
-      ["chest", "frontDelts", "triceps", "core"],
-      ["chest", "chest", "frontDelts", "triceps", "core"],
-      ["chest", "chest", "frontDelts", "sideDelts", "triceps", "core"],
-      ["chest", "chest", "frontDelts", "sideDelts", "triceps", "triceps", "core"],
-      ["chest", "chest", "frontDelts", "sideDelts", "triceps", "triceps", "chest", "core"],
+      ["hPress", "vPress", "elbowExt", "core"],
+      ["hPress", "vPress", "raise", "elbowExt", "core"],
+      ["hPress", "vPress", "fly", "raise", "elbowExt", "core"],
+      ["hPress", "vPress", "fly", "raise", "elbowExt", "elbowExt", "core"],
+      ["hPress", "vPress", "hPress", "fly", "raise", "elbowExt", "elbowExt", "core"],
     ],
     pull: [
-      ["lats", "upperBack", "biceps", "core"],
-      ["lats", "upperBack", "lats", "biceps", "core"],
-      ["lats", "upperBack", "lats", "rearDelts", "biceps", "core"],
-      ["lats", "upperBack", "lats", "rearDelts", "biceps", "biceps", "core"],
-      ["lats", "upperBack", "lats", "lowerBack", "rearDelts", "biceps", "biceps", "core"],
+      ["vPull", "hPull", "elbowFlex", "core"],
+      ["vPull", "hPull", "rearDelt", "elbowFlex", "core"],
+      ["vPull", "hPull", "latIso", "rearDelt", "elbowFlex", "core"],
+      ["vPull", "hPull", "hPull", "rearDelt", "elbowFlex", "elbowFlex", "core"],
+      ["vPull", "hPull", "hPull", "latIso", "rearDelt", "elbowFlex", "elbowFlex", "core"],
     ],
     legs: [
-      ["quads", "hamstrings", "glutes", "calves"],
-      ["quads", "hamstrings", "glutes", "calves", "core"],
-      ["quads", "hamstrings", "glutes", "quads", "calves", "core"],
-      ["quads", "hamstrings", "glutes", "quads", "hamstrings", "calves", "core"],
-      ["quads", "hamstrings", "glutes", "quads", "adductors", "calves", "core", "core"],
+      ["squat", "hinge", "plantarf", "core"],
+      ["squat", "hinge", "kneeFlex", "plantarf", "core"],
+      ["squat", "hinge", "lunge", "kneeFlex", "plantarf", "core"],
+      ["squat", "hinge", "lunge", "kneeFlex", "plantarf", "core"],
+      ["squat", "hinge", "lunge", "hipExt", "kneeFlex", "plantarf", "core", "core"],
     ],
     upper: [
-      ["chest", "lats", "frontDelts", "biceps"],
-      ["chest", "lats", "frontDelts", "triceps", "core"],
-      ["chest", "lats", "frontDelts", "upperBack", "triceps", "biceps"],
-      ["chest", "lats", "frontDelts", "upperBack", "triceps", "biceps", "core"],
-      ["chest", "lats", "frontDelts", "upperBack", "sideDelts", "triceps", "biceps", "core"],
+      ["hPress", "vPull", "vPress", "elbowFlex"],
+      ["hPress", "vPull", "vPress", "elbowExt", "core"],
+      ["hPress", "vPull", "vPress", "hPull", "elbowExt", "elbowFlex"],
+      ["hPress", "vPull", "vPress", "hPull", "elbowExt", "elbowFlex", "core"],
+      ["hPress", "vPull", "vPress", "hPull", "raise", "elbowExt", "elbowFlex", "core"],
     ],
     full: [
-      ["quads", "chest", "lats", "core"],
-      ["quads", "chest", "lats", "hamstrings", "core"],
-      ["quads", "chest", "lats", "hamstrings", "frontDelts", "core"],
-      ["quads", "chest", "lats", "hamstrings", "frontDelts", "biceps", "core"],
-      ["quads", "chest", "lats", "hamstrings", "frontDelts", "triceps", "biceps", "core"],
+      ["squat", "hPress", "vPull", "core"],
+      ["squat", "hPress", "vPull", "hinge", "core"],
+      ["squat", "hPress", "vPull", "hinge", "vPress", "core"],
+      ["squat", "hPress", "vPull", "hinge", "vPress", "elbowFlex", "core"],
+      ["squat", "hPress", "vPull", "hinge", "vPress", "elbowExt", "elbowFlex", "core"],
     ],
   };
   const idx = Math.min(Math.max(want, 4), 8) - 4;
@@ -202,54 +198,109 @@ function slotsFor(focus: Focus, want: number): Slot[] {
 }
 
 function matchesSlot(ex: Exercise, slot: Slot): boolean {
-  if (slot === "core") return isCore(ex);
-  return ex.primary === slot;
+  const p = patternOf(ex);
+  if (slot === "core") return isCorePattern(p);
+  return p === slot;
 }
 
-function scoreForSlot(
-  ex: Exercise,
-  slot: Slot,
-  usedOfSlot: number,
-  recent: Set<string>,
-  profile: Profile,
-  nonce: number,
-): number {
-  const wantIso = ISO_SLOTS.has(slot) || usedOfSlot >= 1;
-  let score = 0;
-  if (wantIso) score += ex.mechanic === "isolation" ? 35 : 12;
-  else score += ex.mechanic === "compound" ? 48 : 16;
-  if (recent.has(ex.id)) score -= 25;
-  score += (profile.exerciseBias[ex.id] ?? 0) * 32;
-  score += (hashPick(ex.id, nonce) % 17) - 8;
+const SLOT_FALLBACK: Partial<Record<Slot, Pattern[]>> = {
+  fly: ["hPress"],
+  latIso: ["vPull"],
+  lunge: ["kneeExt", "squat"],
+  kneeFlex: ["hinge"],
+  hipExt: ["hinge"],
+  raise: ["vPress"],
+  rearDelt: ["hPull"],
+  core: ["antiExt", "antiRot", "trunkFlx"],
+};
+
+function pickForSlot(slot: Slot, pool: Exercise[], ctx: PickCtx): Exercise | undefined {
+  const trySlot = (s: Slot) => {
+    const ranked = pool
+      .filter((ex) => !ctx.taken.has(ex.id) && matchesSlot(ex, s))
+      .map((ex) => ({ ex, score: scoreCandidate(ex, slot, ctx) }))
+      .sort((a, b) => b.score - a.score);
+    return ranked[0]?.ex;
+  };
+  const direct = trySlot(slot);
+  if (direct) return direct;
+  for (const alt of SLOT_FALLBACK[slot] ?? []) {
+    const hit = trySlot(alt);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+interface PickCtx {
+  taken: Set<string>;
+  patterns: Pattern[];
+  angles: Set<string>;
+  spinal: boolean;
+  recent: Set<string>;
+  profile: Profile;
+  nonce: number;
+}
+
+function scoreCandidate(ex: Exercise, slot: Slot, ctx: PickCtx): number {
+  const p = patternOf(ex);
+  let score = qualityScore(ex);
+  score += (ctx.profile.exerciseBias[ex.id] ?? 0) * 32;
+  if (ctx.recent.has(ex.id)) score -= 28;
+
+  if (slot === "core") {
+    if (p === "antiExt") score += 18;
+    else if (p === "antiRot") score += 14;
+    else score += 4;
+  } else if (slot === "fly") {
+    score += p === "fly" ? 22 : 4;
+  } else if (slot === "latIso") {
+    score += p === "latIso" ? 20 : 6;
+  } else if (slot === "lunge") {
+    score += p === "lunge" ? 24 : 2;
+  } else if (slot === "raise") {
+    score += p === "raise" ? 20 : -40;
+  }
+
+  if (p === "frontRaise") score -= 40;
+
+  if (slot === "hPress" || slot === "fly") {
+    const angle = pressAngle(ex);
+    if (ctx.angles.has(angle) && p === "hPress") score -= 22;
+    if (angle === "decline" && ctx.angles.size === 0) score -= 12;
+  }
+
+  if ((p === "hPress" || p === "vPress") && ctx.patterns.includes(p) && slot !== "fly") {
+    score -= 16;
+  }
+
+  if (ctx.spinal && isSpinalLoad(ex)) score -= 30;
+
+  const n = `${ex.id} ${ex.name}`.toLowerCase();
+  if (slot === "hinge" && ctx.patterns.includes("squat")) {
+    if (/rdl|romanian|good morning/.test(n)) score += 16;
+    if (/trap bar/.test(n)) score -= 18;
+  }
+
+  score += (hashPick(ex.id, ctx.nonce) % 11) - 5;
   return score;
 }
 
-function pickForSlot(
-  slot: Slot,
-  pool: Exercise[],
-  taken: Set<string>,
-  usedOfSlot: number,
-  recent: Set<string>,
-  profile: Profile,
-  nonce: number,
-): Exercise | undefined {
-  const ranked = pool
-    .filter((ex) => matchesSlot(ex, slot) && !taken.has(ex.id))
-    .map((ex) => ({
-      ex,
-      score: scoreForSlot(ex, slot, usedOfSlot, recent, profile, nonce),
-    }))
-    .sort((a, b) => b.score - a.score);
-  return ranked[0]?.ex;
+function fallbackForFocus(focus: Focus, pool: Exercise[], ctx: PickCtx): Exercise | undefined {
+  const allowed = new Set(FOCUS_MUSCLES[focus]);
+  return pool.find((ex) => {
+    if (ctx.taken.has(ex.id)) return false;
+    if (patternOf(ex) === "frontRaise") return false;
+    return allowed.has(ex.primary) || isCorePattern(patternOf(ex));
+  });
 }
 
-function fallbackForFocus(
-  focus: Focus,
-  pool: Exercise[],
-  taken: Set<string>,
-): Exercise | undefined {
-  const allowed = new Set<Muscle>([...FOCUS_MUSCLES[focus], ...CORE_MUSCLES]);
-  return pool.find((ex) => !taken.has(ex.id) && allowed.has(ex.primary));
+function commit(ex: Exercise, ctx: PickCtx, picked: Exercise[]) {
+  picked.push(ex);
+  ctx.taken.add(ex.id);
+  const p = patternOf(ex);
+  ctx.patterns.push(p);
+  if (p === "hPress") ctx.angles.add(pressAngle(ex));
+  if (isSpinalLoad(ex)) ctx.spinal = true;
 }
 
 export function generateWorkout(
@@ -267,29 +318,29 @@ export function generateWorkout(
   const want = exerciseCount(profile.durationMin);
   const slots = slotsFor(focus, want);
   const picked: Exercise[] = [];
-  const taken = new Set<string>();
-  const usedOfSlot = new Map<Slot, number>();
+  const ctx: PickCtx = {
+    taken: new Set(),
+    patterns: [],
+    angles: new Set(),
+    spinal: false,
+    recent,
+    profile,
+    nonce,
+  };
 
   for (const slot of slots) {
-    const used = usedOfSlot.get(slot) ?? 0;
-    const hit =
-      pickForSlot(slot, pool, taken, used, recent, profile, nonce) ??
-      fallbackForFocus(focus, pool, taken);
+    const hit = pickForSlot(slot, pool, ctx) ?? fallbackForFocus(focus, pool, ctx);
     if (!hit) continue;
-    picked.push(hit);
-    taken.add(hit.id);
-    usedOfSlot.set(slot, used + 1);
+    commit(hit, ctx, picked);
   }
 
   if (picked.length === 0) {
     picked.push(...pool.filter((ex) => ex.mechanic === "compound").slice(0, want));
   }
 
-  const title = workoutTitle(profile, focus);
-
   return {
     id: uid(),
-    title,
+    title: workoutTitle(profile, focus),
     focus,
     date: todayISO(now),
     startedAt: null,
@@ -328,10 +379,10 @@ export function alternatives(
 ): Exercise[] {
   const current = getExercise(exerciseId);
   const pool = available(profile).filter((ex) => ex.id !== exerciseId);
-  const sameFamily =
-    isCore(current)
-      ? pool.filter(isCore)
-      : pool.filter((ex) => ex.primary === current.primary);
+  const pat = patternOf(current);
+  const sameFamily = isCorePattern(pat)
+    ? pool.filter((ex) => isCorePattern(patternOf(ex)))
+    : pool.filter((ex) => patternOf(ex) === pat || ex.primary === current.primary);
   return sameFamily
     .sort((a, b) => recentBonus(history, a.id) - recentBonus(history, b.id))
     .slice(0, 8);
