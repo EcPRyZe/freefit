@@ -9,20 +9,29 @@ import type {
   Exercise,
   Focus,
   LoggedSet,
+  Muscle,
   Profile,
   SessionExercise,
   WorkoutSession,
 } from "./types";
 import { FOCUS_LABEL, FOCUS_MUSCLES } from "./types";
 
-const CORE_IDS = new Set([
-  "hanging-leg-raise",
-  "cable-crunch",
-  "plank",
-  "ab-wheel",
-  "pallof",
-  "dead-bug",
+const CORE_MUSCLES: Muscle[] = ["abs", "obliques"];
+const ISO_SLOTS = new Set<string>([
+  "core",
+  "sideDelts",
+  "triceps",
+  "biceps",
+  "rearDelts",
+  "calves",
+  "adductors",
 ]);
+
+type Slot = Muscle | "core";
+
+function isCore(ex: Exercise): boolean {
+  return CORE_MUSCLES.includes(ex.primary);
+}
 
 function available(profile: Profile): Exercise[] {
   const kit = new Set(profile.equipment);
@@ -149,6 +158,100 @@ function exerciseCount(durationMin: number): number {
   return 8;
 }
 
+/** 4–8 slot templates. Push = chest/shoulders/tris + abs. Pull = back/bis + abs. */
+function slotsFor(focus: Focus, want: number): Slot[] {
+  const table: Record<Focus, Slot[][]> = {
+    push: [
+      ["chest", "frontDelts", "triceps", "core"],
+      ["chest", "chest", "frontDelts", "triceps", "core"],
+      ["chest", "chest", "frontDelts", "sideDelts", "triceps", "core"],
+      ["chest", "chest", "frontDelts", "sideDelts", "triceps", "triceps", "core"],
+      ["chest", "chest", "frontDelts", "sideDelts", "triceps", "triceps", "chest", "core"],
+    ],
+    pull: [
+      ["lats", "upperBack", "biceps", "core"],
+      ["lats", "upperBack", "lats", "biceps", "core"],
+      ["lats", "upperBack", "lats", "rearDelts", "biceps", "core"],
+      ["lats", "upperBack", "lats", "rearDelts", "biceps", "biceps", "core"],
+      ["lats", "upperBack", "lats", "lowerBack", "rearDelts", "biceps", "biceps", "core"],
+    ],
+    legs: [
+      ["quads", "hamstrings", "glutes", "calves"],
+      ["quads", "hamstrings", "glutes", "calves", "core"],
+      ["quads", "hamstrings", "glutes", "quads", "calves", "core"],
+      ["quads", "hamstrings", "glutes", "quads", "hamstrings", "calves", "core"],
+      ["quads", "hamstrings", "glutes", "quads", "adductors", "calves", "core", "core"],
+    ],
+    upper: [
+      ["chest", "lats", "frontDelts", "biceps"],
+      ["chest", "lats", "frontDelts", "triceps", "core"],
+      ["chest", "lats", "frontDelts", "upperBack", "triceps", "biceps"],
+      ["chest", "lats", "frontDelts", "upperBack", "triceps", "biceps", "core"],
+      ["chest", "lats", "frontDelts", "upperBack", "sideDelts", "triceps", "biceps", "core"],
+    ],
+    full: [
+      ["quads", "chest", "lats", "core"],
+      ["quads", "chest", "lats", "hamstrings", "core"],
+      ["quads", "chest", "lats", "hamstrings", "frontDelts", "core"],
+      ["quads", "chest", "lats", "hamstrings", "frontDelts", "biceps", "core"],
+      ["quads", "chest", "lats", "hamstrings", "frontDelts", "triceps", "biceps", "core"],
+    ],
+  };
+  const idx = Math.min(Math.max(want, 4), 8) - 4;
+  return table[focus][idx];
+}
+
+function matchesSlot(ex: Exercise, slot: Slot): boolean {
+  if (slot === "core") return isCore(ex);
+  return ex.primary === slot;
+}
+
+function scoreForSlot(
+  ex: Exercise,
+  slot: Slot,
+  usedOfSlot: number,
+  recent: Set<string>,
+  profile: Profile,
+  nonce: number,
+): number {
+  const wantIso = ISO_SLOTS.has(slot) || usedOfSlot >= 1;
+  let score = 0;
+  if (wantIso) score += ex.mechanic === "isolation" ? 35 : 12;
+  else score += ex.mechanic === "compound" ? 48 : 16;
+  if (recent.has(ex.id)) score -= 25;
+  score += (profile.exerciseBias[ex.id] ?? 0) * 32;
+  score += (hashPick(ex.id, nonce) % 17) - 8;
+  return score;
+}
+
+function pickForSlot(
+  slot: Slot,
+  pool: Exercise[],
+  taken: Set<string>,
+  usedOfSlot: number,
+  recent: Set<string>,
+  profile: Profile,
+  nonce: number,
+): Exercise | undefined {
+  const ranked = pool
+    .filter((ex) => matchesSlot(ex, slot) && !taken.has(ex.id))
+    .map((ex) => ({
+      ex,
+      score: scoreForSlot(ex, slot, usedOfSlot, recent, profile, nonce),
+    }))
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.ex;
+}
+
+function fallbackForFocus(
+  focus: Focus,
+  pool: Exercise[],
+  taken: Set<string>,
+): Exercise | undefined {
+  const allowed = new Set<Muscle>([...FOCUS_MUSCLES[focus], ...CORE_MUSCLES]);
+  return pool.find((ex) => !taken.has(ex.id) && allowed.has(ex.primary));
+}
+
 export function generateWorkout(
   profile: Profile,
   history: WorkoutSession[],
@@ -158,57 +261,29 @@ export function generateWorkout(
   const focus = opts.focus ?? pickFocus(history, now);
   const nonce = opts.nonce ?? 0;
   const pool = available(profile);
-  const primaries = FOCUS_MUSCLES[focus];
   const recent = new Set(
     history.slice(0, 3).flatMap((w) => w.exercises.map((e) => e.exerciseId)),
   );
-
-  const scored = pool
-    .filter((ex) => primaries.includes(ex.primary) || CORE_IDS.has(ex.id))
-    .map((ex) => {
-      let score = 0;
-      if (ex.mechanic === "compound") score += 40;
-      if (primaries.includes(ex.primary)) score += 20;
-      if (recent.has(ex.id)) score -= 25;
-      score += (profile.exerciseBias[ex.id] ?? 0) * 32;
-      score += (hashPick(ex.id, nonce) % 17) - 8;
-      return { ex, score };
-    })
-    .sort((a, b) => b.score - a.score);
-
   const want = exerciseCount(profile.durationMin);
+  const slots = slotsFor(focus, want);
   const picked: Exercise[] = [];
-  const usedPrimary = new Map<string, number>();
+  const taken = new Set<string>();
+  const usedOfSlot = new Map<Slot, number>();
 
-  const maxPer = focus === "full" || focus === "upper" ? 1 : 2;
-
-  for (const { ex } of scored) {
-    if (picked.length >= want) break;
-    if (CORE_IDS.has(ex.id)) continue;
-    const used = usedPrimary.get(ex.primary) ?? 0;
-    if (used >= maxPer && picked.length < want - 1) continue;
-    picked.push(ex);
-    usedPrimary.set(ex.primary, used + 1);
-  }
-
-  if (profile.durationMin >= 45) {
-    const core = scored.find(
-      (s) => CORE_IDS.has(s.ex.id) && !picked.some((p) => p.id === s.ex.id),
-    );
-    if (core) {
-      if (picked.length >= want) picked.pop();
-      picked.push(core.ex);
-    }
+  for (const slot of slots) {
+    const used = usedOfSlot.get(slot) ?? 0;
+    const hit =
+      pickForSlot(slot, pool, taken, used, recent, profile, nonce) ??
+      fallbackForFocus(focus, pool, taken);
+    if (!hit) continue;
+    picked.push(hit);
+    taken.add(hit.id);
+    usedOfSlot.set(slot, used + 1);
   }
 
   if (picked.length === 0) {
-    const fallback = pool.filter((ex) => ex.mechanic === "compound").slice(0, want);
-    picked.push(...fallback);
+    picked.push(...pool.filter((ex) => ex.mechanic === "compound").slice(0, want));
   }
-
-  const compounds = picked.filter((p) => p.mechanic === "compound");
-  const isos = picked.filter((p) => p.mechanic !== "compound");
-  const ordered = [...compounds, ...isos];
 
   const title = workoutTitle(profile, focus);
 
@@ -220,7 +295,7 @@ export function generateWorkout(
     startedAt: null,
     finishedAt: null,
     durationSec: 0,
-    exercises: ordered.map((ex) => {
+    exercises: picked.map((ex) => {
       const built = buildSets(profile, history, ex);
       return {
         instanceId: uid(),
@@ -253,13 +328,12 @@ export function alternatives(
 ): Exercise[] {
   const current = getExercise(exerciseId);
   const pool = available(profile).filter((ex) => ex.id !== exerciseId);
-  return pool
-    .filter((ex) => ex.primary === current.primary)
-    .sort((a, b) => {
-      const ra = recentBonus(history, a.id);
-      const rb = recentBonus(history, b.id);
-      return ra - rb;
-    })
+  const sameFamily =
+    isCore(current)
+      ? pool.filter(isCore)
+      : pool.filter((ex) => ex.primary === current.primary);
+  return sameFamily
+    .sort((a, b) => recentBonus(history, a.id) - recentBonus(history, b.id))
     .slice(0, 8);
 }
 

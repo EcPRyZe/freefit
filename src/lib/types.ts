@@ -120,7 +120,7 @@ export const FOCUS_LABEL: Record<Focus, string> = {
 
 export const FOCUS_MUSCLES: Record<Focus, Muscle[]> = {
   push: ["chest", "frontDelts", "sideDelts", "triceps"],
-  pull: ["lats", "upperBack", "traps", "rearDelts", "biceps", "lowerBack"],
+  pull: ["lats", "upperBack", "traps", "rearDelts", "biceps"],
   legs: ["quads", "hamstrings", "glutes", "adductors", "calves"],
   upper: [
     "chest",
