@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, ChevronDown, Heart, Minus, Plus, Repeat2, SkipForward, X } from "lucide-react";
+import { Check, ChevronDown, Heart, Minus, Play, Plus, Repeat2, SkipForward, X } from "lucide-react";
 import { toast } from "sonner";
 import { AddExerciseSheet } from "@/components/add-exercise-sheet";
-import { RestTimer } from "@/components/rest-timer";
+import { FormVideoSheet } from "@/components/form-video";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { estimateKcal } from "@/lib/calories";
@@ -47,6 +47,7 @@ export function SessionView() {
   const [clock, setClock] = useState(0);
   const [openId, setOpenId] = useState<string | null>(active?.exercises[0]?.instanceId ?? null);
   const [swapFor, setSwapFor] = useState<string | null>(null);
+  const [formFor, setFormFor] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addQuery, setAddQuery] = useState("");
@@ -91,16 +92,8 @@ export function SessionView() {
   const suggestions = swapFor ? suggestionsFor(swapFor) : [];
 
   return (
-    <div className="mx-auto flex h-full max-w-lg flex-col overflow-hidden bg-bg">
+    <div className="mx-auto flex min-h-dvh max-w-lg flex-col bg-bg pb-[calc(10rem+env(safe-area-inset-bottom))]">
       <header className="z-20 flex shrink-0 items-center gap-3 border-b border-border bg-bg px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <button
-          type="button"
-          onClick={() => setConfirm(true)}
-          className="inline-flex size-11 items-center justify-center rounded-xl text-muted hover:bg-raised hover:text-fg"
-          aria-label="Close workout"
-        >
-          <X className="size-5" />
-        </button>
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">{active.title}</p>
           <p className="tabular text-xs text-muted">
@@ -157,7 +150,7 @@ export function SessionView() {
         </Button>
       </header>
 
-      <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-4 py-4 pb-36">
+      <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-4 py-4">
         {active.exercises.map((item, index) => {
           const ex = getExercise(item.exerciseId);
           const open = openId === item.instanceId;
@@ -206,6 +199,10 @@ export function SessionView() {
                     >
                       <SkipForward className="size-3.5" />
                       Skip
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setFormFor(ex.id)}>
+                      <Play className="size-3.5" />
+                      Form
                     </Button>
                   </div>
                   <div className="mb-3">
@@ -309,7 +306,7 @@ export function SessionView() {
         </li>
       </ol>
 
-      <RestTimer />
+      {formFor && <FormVideoSheet exerciseId={formFor} onClose={() => setFormFor(null)} />}
 
       {adding && (
         <AddExerciseSheet

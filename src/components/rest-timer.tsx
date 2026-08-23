@@ -5,7 +5,7 @@ import { formatRest } from "@/lib/format";
 import { notifyRestOver, requestRestAlerts, unlockAudio } from "@/lib/ping";
 import { useGym } from "@/lib/store";
 
-export function RestTimer() {
+export function RestTimer({ lift = false }: { lift?: boolean }) {
   const rest = useGym((s) => s.rest);
   const skip = useGym((s) => s.skipRest);
   const add = useGym((s) => s.addRest);
@@ -53,9 +53,15 @@ export function RestTimer() {
   const r = 52;
   const c = 2 * Math.PI * r;
   const dash = c * progress;
+  const bottom = lift
+    ? "calc(7.25rem + env(safe-area-inset-bottom))"
+    : "calc(3.75rem + env(safe-area-inset-bottom))";
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <div
+      className="pointer-events-none fixed inset-x-0 z-40 flex justify-center"
+      style={{ bottom }}
+    >
       <div className="pointer-events-auto mx-4 mb-2 flex w-full max-w-md items-center gap-4 rounded-3xl bg-raised px-4 py-3 shadow-border">
         <svg viewBox="0 0 120 120" className="size-16 shrink-0">
           <circle cx="60" cy="60" r={r} fill="none" stroke="#2a2a30" strokeWidth="8" />

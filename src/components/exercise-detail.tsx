@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
 import { BiasControls } from "@/components/bias-controls";
+import { FormVideo } from "@/components/form-video";
 import { Button } from "@/components/ui/button";
 import { getExercise } from "@/lib/exercises";
 import { formatWeight } from "@/lib/format";
@@ -82,6 +83,8 @@ export function ExerciseDetail({ id }: { id: string }) {
         </div>
         <ChevronRight className="size-4 text-faint" />
       </Link>
+
+      <FormVideo exerciseId={ex.id} />
 
       <section className="mt-6">
         <h2 className="text-sm font-medium text-muted">Suggestions</h2>
