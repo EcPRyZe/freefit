@@ -94,36 +94,109 @@ export function lastWorkingSets(
   return null;
 }
 
+/** Typical training load: the working weight they actually used, not a catalog default. */
+export function typicalLoad(sets: LoggedSet[]): { weight: number; reps: number } | null {
+  const working = sets.filter((s) => !s.warmup && s.weight > 0);
+  if (!working.length) return null;
+  const counts = new Map<number, number>();
+  for (const s of working) counts.set(s.weight, (counts.get(s.weight) ?? 0) + 1);
+  let weight = working[0].weight;
+  let best = 0;
+  for (const [w, n] of counts) {
+    if (n > best || (n === best && w > weight)) {
+      weight = w;
+      best = n;
+    }
+  }
+  const atWeight = working.filter((s) => s.weight === weight);
+  const reps = atWeight[0]?.reps ?? working[0].reps;
+  return { weight, reps };
+}
+
+function musclesOf(exerciseId: string): Set<string> {
+  const ex = getExercise(exerciseId);
+  return new Set([ex.primary, ...ex.secondary]);
+}
+
+/**
+ * 0–15% reduction when earlier lifts in this session overlap and were heavy or
+ * already a grind. First lift stays at last working weight.
+ */
+export function sessionFatigue(
+  history: WorkoutSession[],
+  exerciseId: string,
+  prior: SessionExercise[],
+): number {
+  const target = musclesOf(exerciseId);
+  let f = 0;
+  let priorCompounds = 0;
+  for (const item of prior) {
+    const ex = getExercise(item.exerciseId);
+    const overlap = [ex.primary, ...ex.secondary].some((m) => target.has(m));
+    if (ex.mechanic === "compound") priorCompounds += 1;
+
+    const last = lastWorkingSets(history, item.exerciseId);
+    const typical = last ? typicalLoad(last) : null;
+    const prescribed = item.sets.find((s) => !s.warmup);
+    const heavy =
+      typical && prescribed && typical.weight > 0 && prescribed.weight >= typical.weight * 0.92;
+
+    const done = item.sets.filter((s) => s.completed && !s.warmup);
+    const targetReps = prescribed?.reps ?? 0;
+    const grind =
+      done.some((s) => targetReps > 0 && s.reps <= targetReps - 2) ||
+      done.some((s, i, arr) => i > 0 && s.weight + 0.5 < arr[0].weight);
+
+    if (overlap && ex.mechanic === "compound") f += 0.04;
+    else if (overlap) f += 0.015;
+    if (overlap && heavy) f += 0.03;
+    if (grind) f += 0.05;
+  }
+  if (priorCompounds >= 3) f += 0.03;
+  return Math.min(0.15, f);
+}
+
 export function recommendWeightLb(
   profile: Profile,
   history: WorkoutSession[],
   exerciseId: string,
+  prior: SessionExercise[] = [],
 ): number {
   const ex = getExercise(exerciseId);
-  if (ex.bodyweight) {
-    const last = lastWorkingSets(history, exerciseId);
-    return last ? last[0].weight : 0;
-  }
   const last = lastWorkingSets(history, exerciseId);
   const { reps } = scheme(profile, ex);
+  const fatigue = sessionFatigue(history, exerciseId, prior);
+
+  if (ex.bodyweight) {
+    const typical = last ? typicalLoad(last) : null;
+    return typical ? typical.weight : 0;
+  }
+
   if (!last) {
     const exp =
       profile.experience === "beginner" ? 0.7 : profile.experience === "advanced" ? 1.2 : 1;
-    return roundTo(ex.defaultWeightLb * exp, ex.incrementLb);
+    return roundTo(ex.defaultWeightLb * exp * (1 - fatigue), ex.incrementLb);
   }
-  const top = Math.max(...last.map((s) => s.weight));
-  const hit = last.every((s) => s.reps >= reps);
-  const next = hit ? top + ex.incrementLb : top;
-  return roundTo(next, ex.incrementLb);
+
+  const typical = typicalLoad(last) ?? { weight: last[0].weight, reps: last[0].reps };
+  const held = last
+    .filter((s) => !s.warmup && s.completed)
+    .every((s) => s.weight >= typical.weight - 0.5 && s.reps >= reps);
+  let weight = typical.weight;
+  if (held) weight += ex.incrementLb;
+  weight *= 1 - fatigue;
+  const floor = typical.weight * (1 - Math.max(fatigue, 0.05));
+  return roundTo(Math.max(weight, floor), ex.incrementLb);
 }
 
 function buildSets(
   profile: Profile,
   history: WorkoutSession[],
   ex: Exercise,
+  prior: SessionExercise[] = [],
 ): { sets: LoggedSet[]; restSec: number } {
   const { sets: n, reps, rest } = scheme(profile, ex);
-  const weight = recommendWeightLb(profile, history, ex.id);
+  const weight = recommendWeightLb(profile, history, ex.id, prior);
   const working: LoggedSet[] = Array.from({ length: n }, () => ({
     weight,
     reps,
@@ -138,6 +211,49 @@ function buildSets(
     );
   }
   return { sets: [...warmups, ...working], restSec: rest };
+}
+
+export function prescribeExercise(
+  profile: Profile,
+  history: WorkoutSession[],
+  exerciseId: string,
+  prior: SessionExercise[] = [],
+): { sets: LoggedSet[]; restSec: number } {
+  return buildSets(profile, history, getExercise(exerciseId), prior);
+}
+
+/** Re-apply last-session loads (and fatigue) to a planned/active session. */
+export function prescribeSession(
+  session: WorkoutSession,
+  profile: Profile,
+  history: WorkoutSession[],
+): WorkoutSession {
+  const prior: SessionExercise[] = [];
+  const exercises = session.exercises.map((item) => {
+    const built = buildSets(profile, history, getExercise(item.exerciseId), prior);
+    const wantWork = Math.max(1, item.sets.filter((s) => !s.warmup).length);
+    const builtWork = built.sets.filter((s) => !s.warmup);
+    const builtWarm = built.sets.filter((s) => s.warmup);
+    const proto = builtWork[0] ?? {
+      weight: 0,
+      reps: 10,
+      completed: false,
+      warmup: false,
+    };
+    const working = Array.from({ length: wantWork }, (_, i) => ({
+      ...(builtWork[i] ?? proto),
+      completed: false,
+      warmup: false,
+    }));
+    const next: SessionExercise = {
+      ...item,
+      sets: [...builtWarm, ...working],
+      restSec: built.restSec,
+    };
+    prior.push(next);
+    return next;
+  });
+  return { ...session, exercises };
 }
 
 function exerciseCount(durationMin: number): number {
@@ -338,6 +454,19 @@ export function generateWorkout(
     picked.push(...pool.filter((ex) => ex.mechanic === "compound").slice(0, want));
   }
 
+  const exercises: SessionExercise[] = [];
+  for (const ex of picked) {
+    const built = buildSets(profile, history, ex, exercises);
+    exercises.push({
+      instanceId: uid(),
+      exerciseId: ex.id,
+      sets: built.sets,
+      restSec: built.restSec,
+      notes: "",
+      setStyle: "normal",
+    });
+  }
+
   return {
     id: uid(),
     title: workoutTitle(profile, focus),
@@ -346,17 +475,7 @@ export function generateWorkout(
     startedAt: null,
     finishedAt: null,
     durationSec: 0,
-    exercises: picked.map((ex) => {
-      const built = buildSets(profile, history, ex);
-      return {
-        instanceId: uid(),
-        exerciseId: ex.id,
-        sets: built.sets,
-        restSec: built.restSec,
-        notes: "",
-        setStyle: "normal",
-      } satisfies SessionExercise;
-    }),
+    exercises,
   };
 }
 

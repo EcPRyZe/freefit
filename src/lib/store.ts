@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { bindCustomExercises, getExercise } from "./exercises";
 import { todayISO, uid } from "./format";
-import { alternatives, generateWorkout, isPersonalRecord } from "./generator";
+import { alternatives, generateWorkout, isPersonalRecord, prescribeExercise, prescribeSession } from "./generator";
 import { resetHrSession, snapshotHr } from "./heart-rate";
 import { parseBackup, BACKUP_APP, BACKUP_VERSION, type GymBackup } from "./backup";
 import { createSeedHistory, DEFAULT_PROFILE, normalizeProfile } from "./seed";
@@ -111,20 +111,13 @@ function applySet(
   };
 }
 
-function defaultSetsFor(exerciseId: string, profile: Profile, history: WorkoutSession[]) {
-  const template = generateWorkout(profile, history);
-  const match = template.exercises.find((e) => e.exerciseId === exerciseId);
-  if (match) return { sets: match.sets, restSec: match.restSec };
-  const ex = getExercise(exerciseId);
-  return {
-    restSec: ex.mechanic === "compound" ? 90 : 60,
-    sets: Array.from({ length: 3 }, () => ({
-      weight: ex.bodyweight ? 0 : ex.defaultWeightLb,
-      reps: 10,
-      completed: false,
-      warmup: false,
-    })),
-  };
+function defaultSetsFor(
+  exerciseId: string,
+  profile: Profile,
+  history: WorkoutSession[],
+  prior: WorkoutSession["exercises"] = [],
+) {
+  return prescribeExercise(profile, history, exerciseId, prior);
 }
 
 export const useGym = create<GymState>()(
@@ -146,7 +139,16 @@ export const useGym = create<GymState>()(
 
       setHydrated: () => {
         bindCustomExercises(get().customExercises);
-        set({ hydrated: true });
+        const s = get();
+        const profile = normalizeProfile(s.profile);
+        set({
+          hydrated: true,
+          profile,
+          planned:
+            s.planned && s.onboardingComplete
+              ? prescribeSession(s.planned, profile, s.history)
+              : s.planned,
+        });
       },
 
       completeOnboarding: (profile) => {
@@ -222,7 +224,11 @@ export const useGym = create<GymState>()(
         const session = planned ?? generateWorkout(profile, history);
         resetHrSession();
         set({
-          active: { ...session, startedAt: Date.now(), date: todayISO() },
+          active: {
+            ...prescribeSession(session, profile, history),
+            startedAt: Date.now(),
+            date: todayISO(),
+          },
           rest: null,
         });
       },
@@ -230,7 +236,33 @@ export const useGym = create<GymState>()(
       updateSet: (instanceId, setIndex, patch) => {
         const { active } = get();
         if (!active) return;
-        set({ active: applySet(active, instanceId, setIndex, patch) });
+        set({
+          active: {
+            ...active,
+            exercises: active.exercises.map((ex) => {
+              if (ex.instanceId !== instanceId) return ex;
+              const source = ex.sets[setIndex];
+              if (!source) return ex;
+              return {
+                ...ex,
+                sets: ex.sets.map((s, i) => {
+                  if (i === setIndex) return { ...s, ...patch };
+                  const cascade =
+                    i > setIndex &&
+                    !s.completed &&
+                    s.warmup === source.warmup &&
+                    (patch.weight != null || patch.reps != null);
+                  if (!cascade) return s;
+                  return {
+                    ...s,
+                    ...(patch.weight != null ? { weight: patch.weight } : {}),
+                    ...(patch.reps != null ? { reps: patch.reps } : {}),
+                  };
+                }),
+              };
+            }),
+          },
+        });
       },
 
       toggleSet: (instanceId, setIndex) => {
@@ -284,7 +316,8 @@ export const useGym = create<GymState>()(
       swapExercise: (instanceId, newExerciseId) => {
         const { active, profile, history } = get();
         if (!active) return;
-        const built = defaultSetsFor(newExerciseId, profile, history);
+        const prior = active.exercises.filter((item) => item.instanceId !== instanceId);
+        const built = defaultSetsFor(newExerciseId, profile, history, prior);
         set({
           active: {
             ...active,
@@ -331,7 +364,7 @@ export const useGym = create<GymState>()(
         const { active, planned, profile, history } = get();
         const target = active ?? planned;
         if (!target) return undefined;
-        const built = defaultSetsFor(exerciseId, profile, history);
+        const built = defaultSetsFor(exerciseId, profile, history, target.exercises);
         const instanceId = uid();
         const next = {
           ...target,
