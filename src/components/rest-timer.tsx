@@ -7,7 +7,6 @@ import { useGym } from "@/lib/store";
 
 export function RestTimer() {
   const rest = useGym((s) => s.rest);
-  const tick = useGym((s) => s.tickRest);
   const skip = useGym((s) => s.skipRest);
   const add = useGym((s) => s.addRest);
   const lastPing = useRef<string | null>(null);
@@ -20,21 +19,33 @@ export function RestTimer() {
 
   useEffect(() => {
     if (!rest) return;
-    const id = window.setInterval(() => {
+
+    const fire = () => {
       const current = useGym.getState().rest;
       if (!current) return;
-      if (current.remaining <= 1) {
-        const key = `${current.instanceId}-${current.total}`;
-        if (lastPing.current !== key) {
-          lastPing.current = key;
-          notifyRestOver();
-          toast("Rest over", { description: "Hit the next set." });
-        }
-      }
-      tick();
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [rest?.instanceId, rest?.total, tick]);
+      const key = `${current.instanceId}-${current.endsAt}`;
+      const status = useGym.getState().syncRest();
+      if (status !== "ended") return;
+      if (lastPing.current === key) return;
+      lastPing.current = key;
+      notifyRestOver();
+      toast("Rest over", { description: "Hit the next set." });
+    };
+
+    fire();
+    const id = window.setInterval(fire, 250);
+    document.addEventListener("visibilitychange", fire);
+    window.addEventListener("pageshow", fire);
+    window.addEventListener("focus", fire);
+    window.addEventListener("online", fire);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", fire);
+      window.removeEventListener("pageshow", fire);
+      window.removeEventListener("focus", fire);
+      window.removeEventListener("online", fire);
+    };
+  }, [rest?.instanceId, rest?.endsAt]);
 
   if (!rest) return null;
 
@@ -58,7 +69,7 @@ export function RestTimer() {
             strokeLinecap="round"
             strokeDasharray={`${dash} ${c}`}
             transform="rotate(-90 60 60)"
-            className="transition-[stroke-dasharray] duration-1000 linear"
+            className="transition-[stroke-dasharray] duration-200 linear"
           />
           <text
             x="60"

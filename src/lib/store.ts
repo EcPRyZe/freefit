@@ -33,6 +33,7 @@ export interface RestState {
   remaining: number;
   total: number;
   instanceId: string;
+  endsAt: number;
 }
 
 interface GymState {
@@ -61,6 +62,7 @@ interface GymState {
   skipRest: () => void;
   addRest: (sec: number) => void;
   tickRest: () => void;
+  syncRest: () => "ended" | "running" | "idle";
   swapExercise: (instanceId: string, newExerciseId: string) => void;
   skipExercise: (instanceId: string) => void;
   addExercise: (exerciseId: string) => string | undefined;
@@ -290,7 +292,12 @@ export const useGym = create<GymState>()(
           active: next,
           lastPR,
           rest: shouldRest
-            ? { remaining: item.restSec, total: item.restSec, instanceId }
+            ? {
+                remaining: item.restSec,
+                total: item.restSec,
+                instanceId,
+                endsAt: Date.now() + item.restSec * 1000,
+              }
             : rest?.instanceId === instanceId && !completing
               ? null
               : rest,
@@ -302,15 +309,36 @@ export const useGym = create<GymState>()(
       addRest: (sec) => {
         const { rest } = get();
         if (!rest) return;
-        const remaining = Math.max(0, rest.remaining + sec);
-        set({ rest: { ...rest, remaining, total: Math.max(rest.total, remaining) } });
+        const base = rest.endsAt && rest.endsAt > Date.now() ? rest.endsAt : Date.now();
+        const endsAt = base + sec * 1000;
+        const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+        set({
+          rest: {
+            ...rest,
+            endsAt,
+            remaining,
+            total: Math.max(rest.total, remaining),
+          },
+        });
       },
 
       tickRest: () => {
-        const { rest } = get();
-        if (!rest) return;
-        const remaining = rest.remaining - 1;
-        set({ rest: remaining <= 0 ? null : { ...rest, remaining } });
+        get().syncRest();
+      },
+
+      syncRest: () => {
+        const rest = get().rest;
+        if (!rest) return "idle";
+        const endsAt = rest.endsAt || Date.now() + rest.remaining * 1000;
+        const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+        if (remaining <= 0) {
+          set({ rest: null });
+          return "ended";
+        }
+        if (remaining !== rest.remaining || rest.endsAt !== endsAt) {
+          set({ rest: { ...rest, remaining, endsAt } });
+        }
+        return "running";
       },
 
       swapExercise: (instanceId, newExerciseId) => {
@@ -687,6 +715,14 @@ export const useGym = create<GymState>()(
           active: withSetStyle(p.active ?? current.active),
           history: (p.history ?? current.history).map((s) => withSetStyle(s)!),
           shareSession: null,
+          rest: p.rest
+            ? {
+                remaining: p.rest.remaining,
+                total: p.rest.total,
+                instanceId: p.rest.instanceId,
+                endsAt: p.rest.endsAt || Date.now() + Math.max(0, p.rest.remaining) * 1000,
+              }
+            : null,
           integrations: {
             strava: p.integrations?.strava ?? null,
             stravaApp: p.integrations?.stravaApp ?? null,
@@ -701,6 +737,7 @@ export const useGym = create<GymState>()(
         history: s.history,
         planned: s.planned,
         active: s.active,
+        rest: s.rest,
         nonce: s.nonce,
         planMode: s.planMode,
         customExercises: s.customExercises,
