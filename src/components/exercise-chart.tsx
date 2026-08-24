@@ -27,6 +27,11 @@ export function ExerciseChart({
       : units === "kg"
         ? Math.round((p.weight / 2.2046) * 10) / 10
         : p.weight,
+    e1rmDisplay: bodyweight
+      ? p.reps
+      : units === "kg"
+        ? Math.round((p.e1rm / 2.2046) * 10) / 10
+        : p.e1rm,
   }));
   const key = "display";
   const unitLabel = bodyweight ? "reps" : units;
@@ -63,8 +68,21 @@ export function ExerciseChart({
               borderRadius: 12,
               fontSize: 12,
             }}
-            formatter={(v) => [`${v} ${unitLabel}`, bodyweight ? "Reps" : "Top set"]}
+            formatter={(v, name) => [
+              `${v} ${unitLabel}`,
+              name === "e1rmDisplay" ? "Est. 1RM" : bodyweight ? "Reps" : "Top set",
+            ]}
           />
+          {!bodyweight && (
+            <Line
+              type="monotone"
+              dataKey="e1rmDisplay"
+              stroke="var(--color-muted)"
+              strokeWidth={2}
+              strokeDasharray="4 4"
+              dot={{ r: 2, fill: "var(--color-muted)" }}
+            />
+          )}
           <Line
             type="monotone"
             dataKey={key}

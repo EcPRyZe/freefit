@@ -81,6 +81,18 @@ function scheme(profile: Profile, ex: Exercise): { sets: number; reps: number; r
     : { sets: 3, reps: 10, rest: 75 };
 }
 
+export function lastLoggedExercise(
+  history: WorkoutSession[],
+  exerciseId: string,
+): SessionExercise | null {
+  for (const w of history) {
+    const item = w.exercises.find((e) => e.exerciseId === exerciseId);
+    if (!item) continue;
+    if (item.sets.some((s) => !s.warmup && s.completed)) return item;
+  }
+  return null;
+}
+
 export function lastWorkingSets(
   history: WorkoutSession[],
   exerciseId: string,
@@ -179,13 +191,15 @@ export function recommendWeightLb(
   }
 
   const typical = typicalLoad(last) ?? { weight: last[0].weight, reps: last[0].reps };
+  const rpe = lastLoggedExercise(history, exerciseId)?.rpe;
   const held = last
     .filter((s) => !s.warmup && s.completed)
     .every((s) => s.weight >= typical.weight - 0.5 && s.reps >= reps);
   let weight = typical.weight;
-  if (held) weight += ex.incrementLb;
+  const grind = rpe != null && rpe >= 9;
+  if (held && !grind) weight += ex.incrementLb;
   weight *= 1 - fatigue;
-  const floor = typical.weight * (1 - Math.max(fatigue, 0.05));
+  const floor = typical.weight * (1 - Math.max(fatigue, grind ? 0 : 0.05));
   return roundTo(Math.max(weight, floor), ex.incrementLb);
 }
 
@@ -475,7 +489,7 @@ export function generateWorkout(
     startedAt: null,
     finishedAt: null,
     durationSec: 0,
-    exercises,
+    exercises: assignGroups(exercises, profile),
   };
 }
 
@@ -510,6 +524,148 @@ export function alternatives(
 function recentBonus(history: WorkoutSession[], id: string): number {
   const idx = history.findIndex((w) => w.exercises.some((e) => e.exerciseId === id));
   return idx === -1 ? 99 : idx;
+}
+
+export function targetRepsFor(profile: Profile, exerciseId: string): number {
+  return scheme(profile, getExercise(exerciseId)).reps;
+}
+
+export function hitRepRange(item: SessionExercise, targetReps: number): boolean {
+  const working = item.sets.filter((s) => !s.warmup && s.completed);
+  if (!working.length) return false;
+  return working.every((s) => s.reps >= targetReps);
+}
+
+export function loadCue(
+  profile: Profile,
+  history: WorkoutSession[],
+  exerciseId: string,
+): string | null {
+  const ex = getExercise(exerciseId);
+  if (ex.bodyweight) return null;
+  const last = lastWorkingSets(history, exerciseId);
+  if (!last) return null;
+  const rpe = lastLoggedExercise(history, exerciseId)?.rpe;
+  const target = scheme(profile, ex).reps;
+  const hit = last.every((s) => s.reps >= target);
+  const step = profile.units === "kg" ? (ex.incrementLb >= 5 ? "2.5 kg" : "1 kg") : `${ex.incrementLb} lb`;
+  if (rpe != null && rpe >= 9) return `Last session was a grind (RPE ${rpe}). Holding weight.`;
+  if (hit) return `You hit the range — adding ${step} next time.`;
+  return null;
+}
+
+export function progressionToast(
+  profile: Profile,
+  item: SessionExercise,
+): string | null {
+  const ex = getExercise(item.exerciseId);
+  const target = scheme(profile, ex).reps;
+  if (!hitRepRange(item, target)) return null;
+  if (ex.bodyweight) return "You hit the range — add a rep next time.";
+  const step = profile.units === "kg" ? (ex.incrementLb >= 5 ? "2.5 kg" : "1 kg") : `${ex.incrementLb} lb`;
+  return `You hit the range — adding ${step} next time.`;
+}
+
+function pairable(ex: Exercise): boolean {
+  const p = patternOf(ex);
+  if (isCorePattern(p)) return true;
+  if (ex.mechanic === "isolation") return true;
+  return false;
+}
+
+function overlapCount(a: Exercise, b: Exercise): number {
+  const set = new Set([a.primary, ...a.secondary]);
+  return [b.primary, ...b.secondary].filter((m) => set.has(m)).length;
+}
+
+function assignGroups(items: SessionExercise[], profile: Profile): SessionExercise[] {
+  if (!profile.allowSupersets && !profile.allowCircuits) return items;
+  const next = items.map((e) => ({ ...e }));
+  const used = new Set<string>();
+
+  const idxs = next
+    .map((e, i) => ({ e, i, ex: getExercise(e.exerciseId) }))
+    .filter((x) => pairable(x.ex));
+
+  if (profile.allowSupersets) {
+    for (let a = 0; a < idxs.length; a++) {
+      if (used.has(idxs[a].e.instanceId)) continue;
+      for (let b = a + 1; b < idxs.length; b++) {
+        if (used.has(idxs[b].e.instanceId)) continue;
+        if (overlapCount(idxs[a].ex, idxs[b].ex) > 1) continue;
+        if (idxs[a].ex.primary === idxs[b].ex.primary) continue;
+        const id = uid();
+        next[idxs[a].i] = { ...next[idxs[a].i], groupId: id, groupKind: "superset" };
+        next[idxs[b].i] = { ...next[idxs[b].i], groupId: id, groupKind: "superset" };
+        used.add(idxs[a].e.instanceId);
+        used.add(idxs[b].e.instanceId);
+        break;
+      }
+    }
+  }
+
+  if (profile.allowCircuits) {
+    const leftover = idxs.filter((x) => !used.has(x.e.instanceId));
+    if (leftover.length >= 3) {
+      const take = leftover.slice(0, 3);
+      const id = uid();
+      for (const x of take) {
+        next[x.i] = { ...next[x.i], groupId: id, groupKind: "circuit" };
+        used.add(x.e.instanceId);
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  const clustered: SessionExercise[] = [];
+  for (const item of next) {
+    if (!item.groupId) {
+      clustered.push(item);
+      continue;
+    }
+    if (seen.has(item.groupId)) continue;
+    seen.add(item.groupId);
+    clustered.push(...next.filter((x) => x.groupId === item.groupId));
+  }
+  return clustered;
+}
+
+export function groupTag(
+  exercises: SessionExercise[],
+  instanceId: string,
+): { kind: "superset" | "circuit"; tag: string } | null {
+  const item = exercises.find((e) => e.instanceId === instanceId);
+  if (!item?.groupId || !item.groupKind) return null;
+  const ids: string[] = [];
+  for (const e of exercises) {
+    if (e.groupId && !ids.includes(e.groupId)) ids.push(e.groupId);
+  }
+  const letter = String.fromCharCode(65 + Math.max(0, ids.indexOf(item.groupId)));
+  const members = exercises.filter((e) => e.groupId === item.groupId);
+  const n = members.findIndex((e) => e.instanceId === instanceId) + 1;
+  return { kind: item.groupKind, tag: `${letter}${n}` };
+}
+
+/** Seconds of rest after this set, or null for no timer. */
+export function restAfterSet(
+  session: WorkoutSession,
+  instanceId: string,
+  setIndex: number,
+): number | null {
+  const item = session.exercises.find((e) => e.instanceId === instanceId);
+  if (!item) return null;
+  const hasMoreOnThis = item.sets.slice(setIndex + 1).some((s) => !s.completed);
+  if (!item.groupId) return hasMoreOnThis ? item.restSec : null;
+
+  const workDone = item.sets.slice(0, setIndex + 1).filter((s) => !s.warmup).length;
+  const partners = session.exercises.filter((e) => e.groupId === item.groupId);
+  const waiting = partners.some((p) => {
+    if (p.instanceId === instanceId) return false;
+    return p.sets.filter((s) => !s.warmup && s.completed).length < workDone;
+  });
+  if (waiting) return item.groupKind === "circuit" ? 10 : 15;
+  const moreInGroup = partners.some((p) => p.sets.some((s) => !s.completed));
+  return moreInGroup ? item.restSec : null;
 }
 
 export function estimated1RM(history: WorkoutSession[], exerciseId: string): number {

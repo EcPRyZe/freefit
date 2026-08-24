@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatRest } from "@/lib/format";
-import { notifyRestOver, requestRestAlerts, unlockAudio } from "@/lib/ping";
+import { notifyRestOver, requestRestAlerts, unlockAudio, armLockScreenRest, cancelLockScreenRest, updateLockScreenRest } from "@/lib/ping";
 import { useGym } from "@/lib/store";
 
 export function RestTimer({ lift = false }: { lift?: boolean }) {
@@ -12,10 +12,21 @@ export function RestTimer({ lift = false }: { lift?: boolean }) {
   const lastPing = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!rest) return;
+    if (!rest) {
+      cancelLockScreenRest();
+      return;
+    }
     unlockAudio();
     requestRestAlerts();
-  }, [rest?.instanceId]);
+    const remaining = Math.max(0.05, (rest.endsAt - Date.now()) / 1000);
+    armLockScreenRest(remaining, rest.total, rest.label);
+    return () => cancelLockScreenRest();
+  }, [rest?.instanceId, rest?.endsAt, rest?.total, rest?.label]);
+
+  useEffect(() => {
+    if (!rest) return;
+    updateLockScreenRest(rest.remaining, rest.total, rest.label);
+  }, [rest?.remaining, rest?.total, rest?.label]);
 
   useEffect(() => {
     if (!rest) return;

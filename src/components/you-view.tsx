@@ -194,6 +194,16 @@ export function YouView() {
             on={profile.showWarmups}
             onChange={(v) => update({ showWarmups: v })}
           />
+          <Toggle
+            label="Supersets in generated workouts"
+            on={profile.allowSupersets}
+            onChange={(v) => update({ allowSupersets: v })}
+          />
+          <Toggle
+            label="Circuits in generated workouts"
+            on={profile.allowCircuits}
+            onChange={(v) => update({ allowCircuits: v })}
+          />
         </div>
       </section>
 

@@ -13,7 +13,8 @@ import {
   formatWeightShort,
   storeWeight,
 } from "@/lib/format";
-import { lastWorkingSets } from "@/lib/generator";
+import { groupTag, lastWorkingSets, loadCue } from "@/lib/generator";
+import { plateMath } from "@/lib/plates";
 import { unlockAudio } from "@/lib/ping";
 import {
   bleHrSupported,
@@ -32,11 +33,13 @@ export function SessionView() {
   const profile = useGym((s) => s.profile);
   const history = useGym((s) => s.history);
   const lastPR = useGym((s) => s.lastPR);
+  const lastCue = useGym((s) => s.lastCue);
   const toggleSet = useGym((s) => s.toggleSet);
   const updateSet = useGym((s) => s.updateSet);
   const swapExercise = useGym((s) => s.swapExercise);
   const skipExercise = useGym((s) => s.skipExercise);
   const setExerciseStyle = useGym((s) => s.setExerciseStyle);
+  const setExerciseRpe = useGym((s) => s.setExerciseRpe);
   const addExercise = useGym((s) => s.addExercise);
   const addSet = useGym((s) => s.addSet);
   const removeSet = useGym((s) => s.removeSet);
@@ -81,6 +84,11 @@ export function SessionView() {
       description: `${lastPR.name} · ${formatWeightShort(lastPR.weight, profile.units)} × ${lastPR.reps}`,
     });
   }, [lastPR, profile.units]);
+
+  useEffect(() => {
+    if (!lastCue) return;
+    toast.message(lastCue.text);
+  }, [lastCue?.at]);
 
   if (!active) return null;
 
@@ -157,6 +165,13 @@ export function SessionView() {
           const prev = lastWorkingSets(history, item.exerciseId);
           const done = item.sets.filter((s) => !s.warmup && s.completed).length;
           const work = item.sets.filter((s) => !s.warmup).length;
+          const tag = groupTag(active.exercises, item.instanceId);
+          const cue = loadCue(profile, history, item.exerciseId);
+          const liveWeight =
+            item.sets.find((s) => !s.warmup && !s.completed)?.weight ??
+            item.sets.find((s) => !s.warmup)?.weight ??
+            0;
+          const plates = plateMath(liveWeight, profile.units, ex);
           return (
             <li key={item.instanceId} className="overflow-hidden rounded-3xl bg-surface shadow-border">
               <button
@@ -166,7 +181,14 @@ export function SessionView() {
               >
                 <span className="font-display w-6 text-lg text-faint tabular">{index + 1}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{ex.name}</span>
+                  <span className="flex items-center gap-2">
+                    {tag && (
+                      <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                        {tag.kind === "circuit" ? "Ckt" : "SS"} {tag.tag}
+                      </span>
+                    )}
+                    <span className="block truncate font-medium">{ex.name}</span>
+                  </span>
                   <span className="text-sm text-muted">
                     {done}/{work} · {MUSCLE_LABEL[ex.primary]}
                     {(item.setStyle ?? "normal") !== "normal"
@@ -211,6 +233,9 @@ export function SessionView() {
                       onChange={(style) => setExerciseStyle(item.instanceId, style)}
                     />
                   </div>
+                  {cue && (
+                    <p className="mb-3 rounded-xl bg-primary/10 px-3 py-2 text-xs text-primary">{cue}</p>
+                  )}
                   <div className="grid grid-cols-[2rem_1fr_1fr_1fr_2.5rem] gap-1 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-faint">
                     <span>Set</span>
                     <span>Prev</span>
@@ -286,6 +311,15 @@ export function SessionView() {
                       Remove set
                     </Button>
                   </div>
+                  {plates && (
+                    <p className="mt-2 px-1 text-xs tabular text-faint">{plates}</p>
+                  )}
+                  {work > 0 && done === work && (
+                    <RpePicker
+                      value={item.rpe}
+                      onChange={(rpe) => setExerciseRpe(item.instanceId, rpe)}
+                    />
+                  )}
                 </div>
               )}
             </li>
@@ -379,6 +413,46 @@ export function SessionView() {
           </div>
         </Sheet>
       )}
+    </div>
+  );
+}
+
+const RPE_LABEL: Record<number, string> = {
+  6: "Easy",
+  7: "3+ left",
+  8: "2 left",
+  9: "1 left",
+  10: "Max",
+};
+
+function RpePicker({
+  value,
+  onChange,
+}: {
+  value?: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div className="mt-3">
+      <p className="px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+        How hard was that?
+      </p>
+      <div className="mt-1.5 flex gap-1">
+        {[6, 7, 8, 9, 10].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(n)}
+            className={cn(
+              "flex h-12 flex-1 flex-col items-center justify-center rounded-xl text-xs font-semibold",
+              value === n ? "bg-primary text-primary-fg" : "bg-raised text-muted",
+            )}
+          >
+            <span>{n}</span>
+            <span className="text-[9px] font-medium opacity-80">{RPE_LABEL[n]}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

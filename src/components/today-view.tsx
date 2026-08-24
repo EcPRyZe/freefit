@@ -12,6 +12,7 @@ import { formatLongDate, formatWeight, greeting, todayISO } from "@/lib/format";
 import { BAND_LABEL, rateMuscle, ratingColor, ratingMap } from "@/lib/ratings";
 import { averageRecovery, computeRecovery, recoveryColor, recoveryLabel } from "@/lib/recovery";
 import { trainedToday } from "@/lib/stats";
+import { groupTag } from "@/lib/generator";
 import { unlockAudio } from "@/lib/ping";
 import { useGym } from "@/lib/store";
 import { FOCUS_MUSCLES, FOCUS_LABEL, FOCUSES, MUSCLE_LABEL, SET_STYLE_LABEL, type Focus, type Muscle } from "@/lib/types";
@@ -193,6 +194,7 @@ export function TodayView() {
                 const ex = getExercise(item.exerciseId);
                 const working = item.sets.filter((s) => !s.warmup);
                 const top = working[0];
+                const tag = groupTag(planned.exercises, item.instanceId);
                 return (
                   <li key={item.instanceId} className="rounded-2xl bg-surface shadow-border">
                     <div className="flex items-start gap-1 px-2 pt-2">
@@ -202,7 +204,14 @@ export function TodayView() {
                         className="flex min-w-0 flex-1 items-center gap-3 px-2 py-1"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium">{ex.name}</p>
+                          <p className="flex items-center gap-2 truncate font-medium">
+                            {tag && (
+                              <span className="shrink-0 rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                                {tag.kind === "circuit" ? "Ckt" : "SS"} {tag.tag}
+                              </span>
+                            )}
+                            {ex.name}
+                          </p>
                           <p className="text-sm text-muted">
                             {working.length} × {top?.reps ?? 0}
                             {top && top.weight > 0

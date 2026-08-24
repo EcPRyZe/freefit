@@ -17,7 +17,7 @@ export function FormVideo({ exerciseId }: { exerciseId: string }) {
     <section className="mt-6">
       <h2 className="text-sm font-medium text-muted">Form</h2>
       <p className="mt-1 text-xs text-faint">
-        Short clips only (≤60s) from coaches like Jeff Nippard and Squat University.
+        Short clips only (≤60s) from Jeff Nippard, Squat University, and Jeremy Ethier.
       </p>
       {clip ? (
         <div className="mt-3 overflow-hidden rounded-2xl bg-surface shadow-border">

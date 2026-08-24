@@ -213,6 +213,10 @@ export interface SessionExercise {
   restSec: number;
   notes: string;
   setStyle: SetStyle;
+  /** 6–10 after the exercise is done. Not per set. */
+  rpe?: number;
+  groupId?: string;
+  groupKind?: "superset" | "circuit";
 }
 
 export interface WorkoutSession {
@@ -242,6 +246,8 @@ export interface Profile {
   workoutsPerWeek: number;
   restTimerEnabled: boolean;
   showWarmups: boolean;
+  allowSupersets: boolean;
+  allowCircuits: boolean;
   sex: Sex;
   age: number;
   bodyweightLb: number;

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { bindCustomExercises, getExercise } from "./exercises";
 import { todayISO, uid } from "./format";
-import { alternatives, generateWorkout, isPersonalRecord, prescribeExercise, prescribeSession } from "./generator";
+import { alternatives, generateWorkout, isPersonalRecord, prescribeExercise, prescribeSession, progressionToast, restAfterSet } from "./generator";
 import { resetHrSession, snapshotHr } from "./heart-rate";
 import { parseBackup, BACKUP_APP, BACKUP_VERSION, type GymBackup } from "./backup";
 import { createSeedHistory, DEFAULT_PROFILE, normalizeProfile } from "./seed";
@@ -34,6 +34,7 @@ export interface RestState {
   total: number;
   instanceId: string;
   endsAt: number;
+  label?: string;
 }
 
 interface GymState {
@@ -46,6 +47,7 @@ interface GymState {
   rest: RestState | null;
   nonce: number;
   lastPR: { name: string; weight: number; reps: number } | null;
+  lastCue: { text: string; at: number } | null;
   planMode: "auto" | Focus;
   customExercises: Exercise[];
   shareSession: WorkoutSession | null;
@@ -77,6 +79,7 @@ interface GymState {
   addCustomExercise: (ex: Omit<Exercise, "id" | "isCustom">) => string;
   deleteCustomExercise: (id: string) => void;
   setExerciseStyle: (instanceId: string, style: SetStyle) => void;
+  setExerciseRpe: (instanceId: string, rpe: number) => void;
   dismissShare: () => void;
   openShare: (session: WorkoutSession) => void;
   setAutoStrava: (on: boolean) => void;
@@ -134,6 +137,7 @@ export const useGym = create<GymState>()(
       rest: null,
       nonce: 1,
       lastPR: null,
+      lastCue: null,
       planMode: "auto" as const,
       customExercises: [],
       shareSession: null,
@@ -188,7 +192,15 @@ export const useGym = create<GymState>()(
 
       updateProfile: (patch) => {
         const profile = normalizeProfile({ ...get().profile, ...patch });
-        set({ profile });
+        const pairing = "allowSupersets" in patch || "allowCircuits" in patch;
+        const { active, history, planMode } = get();
+        set({
+          profile,
+          planned:
+            pairing && !active
+              ? generateWorkout(profile, history, { focus: planMode === "auto" ? undefined : planMode })
+              : get().planned,
+        });
       },
 
       regenerate: (focus) => {
@@ -285,22 +297,33 @@ export const useGym = create<GymState>()(
           }
         }
 
-        const hasMore = item.sets.slice(setIndex + 1).some((s) => !s.completed);
-        const shouldRest = completing && profile.restTimerEnabled && hasMore;
+        const restSec =
+          completing && profile.restTimerEnabled ? restAfterSet(next, instanceId, setIndex) : null;
+        const after = next.exercises.find((e) => e.instanceId === instanceId);
+        const allWorkingDone =
+          completing &&
+          after &&
+          after.sets.filter((s) => !s.warmup).every((s) => s.completed);
+        const cue = allWorkingDone ? progressionToast(profile, after) : null;
 
         set({
           active: next,
           lastPR,
-          rest: shouldRest
-            ? {
-                remaining: item.restSec,
-                total: item.restSec,
-                instanceId,
-                endsAt: Date.now() + item.restSec * 1000,
-              }
-            : rest?.instanceId === instanceId && !completing
-              ? null
-              : rest,
+          lastCue: cue ? { text: cue, at: Date.now() } : get().lastCue,
+          rest:
+            restSec != null && restSec > 0
+              ? {
+                  remaining: restSec,
+                  total: restSec,
+                  instanceId,
+                  endsAt: Date.now() + restSec * 1000,
+                  label: getExercise(item.exerciseId).name,
+                }
+              : rest?.instanceId === instanceId && !completing
+                ? null
+                : restSec === 0
+                  ? null
+                  : rest,
         });
       },
 
@@ -572,6 +595,19 @@ export const useGym = create<GymState>()(
         if (planned?.exercises.some((e) => e.instanceId === instanceId)) {
           set({ planned: patch(planned) });
         }
+      },
+
+      setExerciseRpe: (instanceId, rpe) => {
+        const { active } = get();
+        if (!active) return;
+        set({
+          active: {
+            ...active,
+            exercises: active.exercises.map((ex) =>
+              ex.instanceId === instanceId ? { ...ex, rpe } : ex,
+            ),
+          },
+        });
       },
 
       dismissShare: () => set({ shareSession: null }),

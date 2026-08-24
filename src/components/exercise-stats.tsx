@@ -64,6 +64,7 @@ export function ExerciseStats({ id }: { id: string }) {
 
       <section className="mt-5 rounded-3xl bg-surface p-4 shadow-border">
         <p className="text-sm font-medium text-muted">Load over time</p>
+        <p className="mb-2 text-xs text-faint">Solid = top set · dashed = projected 1RM</p>
         <ExerciseChart points={points} units={profile.units} />
       </section>
 

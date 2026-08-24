@@ -11,6 +11,7 @@ export interface FormClip {
 
 const NIPPARD = "Jeff Nippard";
 const SQUAT_U = "Squat University";
+const ETHIER = "Jeremy Ethier";
 
 const BY_ID: Record<string, FormClip> = {
   "bb-squat": {
@@ -37,10 +38,28 @@ const BY_ID: Record<string, FormClip> = {
     title: "Deadlift with perfect form",
     seconds: 53,
   },
+  rdl: {
+    videoId: "d-hn_0sEpRQ",
+    channel: SQUAT_U,
+    title: "RDL without back pain",
+    seconds: 58,
+  },
   "lat-raise": {
     videoId: "f_OGBg2KxgY",
     channel: NIPPARD,
     title: "Lateral raise fixes",
+    seconds: 58,
+  },
+  "face-pull": {
+    videoId: "zEuseRjS7vg",
+    channel: NIPPARD,
+    title: "Best rear delt work",
+    seconds: 55,
+  },
+  "pull-up": {
+    videoId: "ZPG8OsHKXLw",
+    channel: ETHIER,
+    title: "The perfect pull-up",
     seconds: 58,
   },
 };
@@ -62,15 +81,25 @@ const ALIAS: Record<string, string> = {
   "reverse-grip-bench": "bb-bench",
   "inc-db-press": "inc-bb-bench",
   "trap-bar-dl": "deadlift",
+  "db-rdl": "rdl",
+  "good-morning": "rdl",
+  "cable-rdl": "rdl",
+  "chin-up": "pull-up",
+  "neutral-pull-up": "pull-up",
   "cable-lat-raise": "lat-raise",
   "behind-cable-lat-raise": "lat-raise",
+  "reverse-fly": "face-pull",
+  "rear-delt-fly": "face-pull",
+  "pec-deck-reverse": "face-pull",
 };
 
 const BY_PATTERN: Partial<Record<Pattern, string>> = {
   squat: "bb-squat",
   hPress: "bb-bench",
-  hinge: "deadlift",
+  hinge: "rdl",
   raise: "lat-raise",
+  rearDelt: "face-pull",
+  vPull: "pull-up",
 };
 
 export function formClipFor(exerciseId: string): FormClip | null {
