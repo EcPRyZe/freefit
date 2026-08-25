@@ -15,7 +15,6 @@ import {
 } from "@/lib/format";
 import { groupTag, lastWorkingSets, loadCue } from "@/lib/generator";
 import { plateMath } from "@/lib/plates";
-import { unlockAudio } from "@/lib/ping";
 import {
   bleHrSupported,
   connectBleHr,
@@ -65,10 +64,6 @@ export function SessionView() {
   }));
 
   useEffect(() => subscribeHr(setHr), []);
-
-  useEffect(() => {
-    unlockAudio();
-  }, []);
 
   useEffect(() => {
     if (!active?.startedAt) return;

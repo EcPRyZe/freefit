@@ -13,7 +13,6 @@ import { BAND_LABEL, rateMuscle, ratingColor, ratingMap } from "@/lib/ratings";
 import { averageRecovery, computeRecovery, recoveryColor, recoveryLabel } from "@/lib/recovery";
 import { trainedToday } from "@/lib/stats";
 import { groupTag } from "@/lib/generator";
-import { unlockAudio } from "@/lib/ping";
 import { useGym } from "@/lib/store";
 import { FOCUS_MUSCLES, FOCUS_LABEL, FOCUSES, MUSCLE_LABEL, SET_STYLE_LABEL, type Focus, type Muscle } from "@/lib/types";
 import { SetStylePicker } from "@/components/set-style-picker";
@@ -182,7 +181,6 @@ export function TodayView() {
               className="mt-5 w-full"
               disabled={planned.exercises.length === 0}
               onClick={() => {
-                unlockAudio();
                 start();
               }}
             >
