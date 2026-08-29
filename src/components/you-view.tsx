@@ -204,6 +204,11 @@ export function YouView() {
             on={profile.allowCircuits}
             onChange={(v) => update({ allowCircuits: v })}
           />
+          <Toggle
+            label="Gym mode"
+            on={profile.gymMode}
+            onChange={(v) => update({ gymMode: v })}
+          />
         </div>
       </section>
 

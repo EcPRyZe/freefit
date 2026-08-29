@@ -248,6 +248,7 @@ export interface Profile {
   showWarmups: boolean;
   allowSupersets: boolean;
   allowCircuits: boolean;
+  gymMode: boolean;
   sex: Sex;
   age: number;
   bodyweightLb: number;

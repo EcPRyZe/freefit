@@ -27,6 +27,14 @@ import { useGym } from "@/lib/store";
 import { EQUIPMENT_LABEL, MUSCLE_LABEL, SET_STYLE_LABEL, type SetStyle } from "@/lib/types";
 import { SetStylePicker } from "@/components/set-style-picker";
 
+function firstIncomplete(exercises: { instanceId: string; sets: { completed: boolean }[] }[]) {
+  for (const ex of exercises) {
+    const i = ex.sets.findIndex((s) => !s.completed);
+    if (i >= 0) return { id: ex.instanceId, i };
+  }
+  return null;
+}
+
 export function SessionView() {
   const active = useGym((s) => s.active);
   const profile = useGym((s) => s.profile);
@@ -45,6 +53,8 @@ export function SessionView() {
   const finish = useGym((s) => s.finishWorkout);
   const discard = useGym((s) => s.discardWorkout);
   const suggestionsFor = useGym((s) => s.suggestionsFor);
+  const updateProfile = useGym((s) => s.updateProfile);
+  const gym = profile.gymMode;
 
   const [clock, setClock] = useState(0);
   const [openId, setOpenId] = useState<string | null>(active?.exercises[0]?.instanceId ?? null);
@@ -53,6 +63,8 @@ export function SessionView() {
   const [confirm, setConfirm] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addQuery, setAddQuery] = useState("");
+  const [moreId, setMoreId] = useState<string | null>(null);
+  const [focus, setFocus] = useState<{ id: string; i: number } | null>(null);
   const [hr, setHr] = useState<HrSnapshot>(() => ({
     bpm: null,
     avg: null,
@@ -85,6 +97,14 @@ export function SessionView() {
     toast.message(lastCue.text);
   }, [lastCue?.at]);
 
+  useEffect(() => {
+    if (!active) return;
+    const next = firstIncomplete(active.exercises);
+    if (!next) return;
+    setOpenId(next.id);
+    setFocus(next);
+  }, [active?.id]);
+
   if (!active) return null;
 
   const completedSets = sessionSets({ ...active, exercises: active.exercises });
@@ -93,6 +113,29 @@ export function SessionView() {
     0,
   );
   const suggestions = swapFor ? suggestionsFor(swapFor) : [];
+
+  const logSet = (instanceId: string, setIndex: number) => {
+    const item = active.exercises.find((e) => e.instanceId === instanceId);
+    if (!item) return;
+    const completing = !item.sets[setIndex]?.completed;
+    toggleSet(instanceId, setIndex);
+    if (!completing) return;
+    const session = useGym.getState().active;
+    if (!session) return;
+    const next = firstIncomplete(session.exercises);
+    if (next) {
+      setOpenId(next.id);
+      setFocus(next);
+      requestAnimationFrame(() => {
+        document.getElementById(`set-${next.id}-${next.i}`)?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+    } else {
+      setFocus(null);
+    }
+  };
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col bg-bg pb-[calc(10rem+env(safe-area-inset-bottom))]">
@@ -116,6 +159,16 @@ export function SessionView() {
             )} kcal`}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => updateProfile({ gymMode: !gym })}
+          className={cn(
+            "inline-flex h-10 shrink-0 items-center rounded-xl px-2.5 text-sm font-semibold",
+            gym ? "bg-primary text-primary-fg" : "text-muted hover:bg-raised",
+          )}
+        >
+          {gym ? "Exit gym" : "Gym"}
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -182,7 +235,7 @@ export function SessionView() {
                         {tag.kind === "circuit" ? "Ckt" : "SS"} {tag.tag}
                       </span>
                     )}
-                    <span className="block truncate font-medium">{ex.name}</span>
+                    <span className={cn("block truncate font-medium", gym && "text-lg")}>{ex.name}</span>
                   </span>
                   <span className="text-sm text-muted">
                     {done}/{work} · {MUSCLE_LABEL[ex.primary]}
@@ -200,38 +253,83 @@ export function SessionView() {
               </button>
               {open && (
                 <div className="border-t border-border px-3 pb-3 pt-2">
-                  <div className="mb-2 flex gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setSwapFor(item.instanceId)}
-                    >
-                      <Repeat2 className="size-3.5" />
-                      Swap
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => skipExercise(item.instanceId)}
-                    >
-                      <SkipForward className="size-3.5" />
-                      Skip
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setFormFor(ex.id)}>
-                      <Play className="size-3.5" />
-                      Form
-                    </Button>
-                  </div>
-                  <div className="mb-3">
-                    <SetStylePicker
-                      value={item.setStyle ?? "normal"}
-                      onChange={(style) => setExerciseStyle(item.instanceId, style)}
-                    />
-                  </div>
-                  {cue && (
+                  {gym ? (
+                    <div className="mb-2 flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setMoreId(moreId === item.instanceId ? null : item.instanceId)}
+                      >
+                        {moreId === item.instanceId ? "Hide extras" : "More"}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="mb-2 flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setSwapFor(item.instanceId)}
+                      >
+                        <Repeat2 className="size-3.5" />
+                        Swap
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => skipExercise(item.instanceId)}
+                      >
+                        <SkipForward className="size-3.5" />
+                        Skip
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setFormFor(ex.id)}>
+                        <Play className="size-3.5" />
+                        Form
+                      </Button>
+                    </div>
+                  )}
+                  {gym && moreId === item.instanceId && (
+                    <div className="mb-2 flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setSwapFor(item.instanceId)}
+                      >
+                        <Repeat2 className="size-3.5" />
+                        Swap
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => skipExercise(item.instanceId)}
+                      >
+                        <SkipForward className="size-3.5" />
+                        Skip
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setFormFor(ex.id)}>
+                        <Play className="size-3.5" />
+                        Form
+                      </Button>
+                    </div>
+                  )}
+                  {(!gym || moreId === item.instanceId) && (
+                    <div className="mb-3">
+                      <SetStylePicker
+                        value={item.setStyle ?? "normal"}
+                        onChange={(style) => setExerciseStyle(item.instanceId, style)}
+                      />
+                    </div>
+                  )}
+                  {cue && !gym && (
                     <p className="mb-3 rounded-xl bg-primary/10 px-3 py-2 text-xs text-primary">{cue}</p>
                   )}
-                  <div className="grid grid-cols-[2rem_1fr_1fr_1fr_2.5rem] gap-1 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+                  <div
+                    className={cn(
+                      "grid gap-1 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-faint",
+                      gym
+                        ? "grid-cols-[2.25rem_1fr_1.15fr_1.15fr_3.25rem]"
+                        : "grid-cols-[2rem_1fr_1fr_1fr_2.5rem]",
+                    )}
+                  >
                     <span>Set</span>
                     <span>Prev</span>
                     <span>{profile.units}</span>
@@ -243,23 +341,37 @@ export function SessionView() {
                     const prevLabel = prevSet
                       ? `${formatWeightShort(prevSet.weight, profile.units, ex.incrementLb)}×${prevSet.reps}`
                       : "—";
+                    const focused = focus?.id === item.instanceId && focus.i === i && !s.completed;
                     return (
                       <div
                         key={i}
+                        id={`set-${item.instanceId}-${i}`}
                         className={cn(
-                          "grid grid-cols-[2rem_1fr_1fr_1fr_2.5rem] items-center gap-1 rounded-xl py-1",
+                          "grid items-center gap-1 rounded-xl py-1",
+                          gym
+                            ? "grid-cols-[2.25rem_1fr_1.15fr_1.15fr_3.25rem] py-1.5"
+                            : "grid-cols-[2rem_1fr_1fr_1fr_2.5rem]",
                           s.completed && "opacity-70",
                           s.warmup && "opacity-80",
+                          focused && "bg-primary/15 px-1 ring-1 ring-primary/40",
                         )}
                       >
-                        <span className="text-center text-xs tabular text-muted">
+                        <span
+                          className={cn(
+                            "text-center tabular text-muted",
+                            gym ? "text-sm" : "text-xs",
+                          )}
+                        >
                           {s.warmup ? "W" : item.sets.slice(0, i).filter((x) => !x.warmup).length + 1}
                         </span>
-                        <span className="truncate text-xs tabular text-muted">{prevLabel}</span>
+                        <span className={cn("truncate tabular text-muted", gym ? "text-sm" : "text-xs")}>
+                          {prevLabel}
+                        </span>
                         <Stepper
                           value={displayWeight(s.weight, profile.units, ex.incrementLb)}
                           step={profile.units === "kg" ? (ex.incrementLb >= 5 ? 2.5 : 1) : ex.incrementLb}
                           disabled={ex.bodyweight && s.weight === 0}
+                          big={gym}
                           onChange={(v) =>
                             updateSet(item.instanceId, i, {
                               weight: storeWeight(v, profile.units),
@@ -269,18 +381,20 @@ export function SessionView() {
                         <Stepper
                           value={s.reps}
                           step={1}
+                          big={gym}
                           onChange={(v) => updateSet(item.instanceId, i, { reps: Math.max(1, v) })}
                         />
                         <button
                           type="button"
-                          onClick={() => toggleSet(item.instanceId, i)}
+                          onClick={() => logSet(item.instanceId, i)}
                           className={cn(
-                            "mx-auto flex size-9 items-center justify-center rounded-lg transition-colors duration-150",
-                            s.completed ? "bg-fresh text-bg" : "bg-raised text-muted",
+                            "mx-auto flex items-center justify-center rounded-lg transition-colors duration-150",
+                            gym || focused ? "size-12" : "size-9",
+                            s.completed ? "bg-fresh text-bg" : focused ? "bg-primary text-primary-fg" : "bg-raised text-muted",
                           )}
                           aria-label={s.completed ? "Uncheck set" : "Complete set"}
                         >
-                          <Check className="size-4" strokeWidth={2.6} />
+                          <Check className={gym || focused ? "size-5" : "size-4"} strokeWidth={2.6} />
                         </button>
                       </div>
                     );
@@ -457,28 +571,37 @@ function Stepper({
   step,
   onChange,
   disabled,
+  big,
 }: {
   value: number;
   step: number;
   onChange: (v: number) => void;
   disabled?: boolean;
+  big?: boolean;
 }) {
   const shown = Number.isInteger(value) ? String(value) : value.toFixed(1);
   return (
-    <div className="flex h-10 items-center justify-between rounded-lg bg-raised px-1">
+    <div
+      className={cn(
+        "flex items-center justify-between rounded-lg bg-raised px-1",
+        big ? "h-12" : "h-10",
+      )}
+    >
       <button
         type="button"
-        className="size-8 text-lg text-muted"
+        className={cn("text-lg text-muted", big ? "size-10" : "size-8")}
         disabled={disabled}
         onClick={() => onChange(Math.max(0, roundStep(value - step, step)))}
         aria-label="Decrease"
       >
         −
       </button>
-      <span className="min-w-8 text-center text-sm font-medium tabular">{shown}</span>
+      <span className={cn("min-w-8 text-center font-medium tabular", big ? "text-base" : "text-sm")}>
+        {shown}
+      </span>
       <button
         type="button"
-        className="size-8 text-lg text-muted"
+        className={cn("text-lg text-muted", big ? "size-10" : "size-8")}
         disabled={disabled}
         onClick={() => onChange(roundStep(value + step, step))}
         aria-label="Increase"

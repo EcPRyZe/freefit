@@ -7,6 +7,8 @@ import { useGym } from "@/lib/store";
 export function ActiveWorkoutBar() {
   const active = useGym((s) => s.active);
   const rest = useGym((s) => s.rest);
+  const gym = useGym((s) => s.profile.gymMode);
+  const updateProfile = useGym((s) => s.updateProfile);
   const navigate = useNavigate();
   const [clock, setClock] = useState(0);
 
@@ -24,20 +26,33 @@ export function ActiveWorkoutBar() {
   const total = active.exercises.reduce((a, e) => a + e.sets.filter((s) => !s.warmup).length, 0);
 
   return (
-    <button
-      type="button"
-      onClick={() => navigate({ to: "/" })}
-      className="fixed inset-x-0 z-[35] flex items-center gap-3 border-t border-primary/30 bg-primary px-4 py-3 text-left text-primary-fg"
+    <div
+      className="fixed inset-x-0 z-[35] flex items-center gap-2 border-t border-primary/30 bg-primary px-3 py-2 text-primary-fg"
       style={{ bottom: "calc(3.5rem + env(safe-area-inset-bottom))" }}
     >
-      <span className="size-2 shrink-0 rounded-full bg-primary-fg/90" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold">{active.title}</span>
-        <span className="text-xs text-primary-fg/80">
-          {formatDuration(clock)} · {done}/{total} sets
-          {rest ? ` · rest ${formatRest(rest.remaining)}` : " · tap to resume"}
+      <button
+        type="button"
+        onClick={() => navigate({ to: "/" })}
+        className="flex min-w-0 flex-1 items-center gap-3 py-1 text-left"
+      >
+        <span className="size-2 shrink-0 rounded-full bg-primary-fg/90" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold">{active.title}</span>
+          <span className="text-xs text-primary-fg/80">
+            {formatDuration(clock)} · {done}/{total} sets
+            {rest ? ` · rest ${formatRest(rest.remaining)}` : " · tap to resume"}
+          </span>
         </span>
-      </span>
-    </button>
+      </button>
+      {gym && (
+        <button
+          type="button"
+          onClick={() => updateProfile({ gymMode: false })}
+          className="shrink-0 rounded-lg bg-primary-fg/15 px-2.5 py-2 text-xs font-semibold"
+        >
+          Exit gym
+        </button>
+      )}
+    </div>
   );
 }
